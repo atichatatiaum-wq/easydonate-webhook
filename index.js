@@ -8,7 +8,7 @@ app.get("/", (req, res) => res.send("Webhook online"));
 
 app.post("/webhook/easydonate", async (req, res) => {
   try {
-    const player = req.body.player_name;
+    const player = "xLucrissx";
 
     const rcon = await Rcon.connect({
       host: process.env.MC_HOST,
