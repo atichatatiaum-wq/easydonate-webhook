@@ -4,80 +4,107 @@ const { Rcon } = require("rcon-client");
 const app = express();
 app.use(express.json());
 
-// ─── RCON Config ────────────────────────────────────────────────────────────
+// ─── RCON Config ─────────────────────────────────────────────────────────────
 const RCON_HOST = "pm2.mc4.in";
 const RCON_PORT = 21697;
 const RCON_PASSWORD = "0808";
 
-// ─── Target Player ──────────────────────────────────────────────────────────
+// ─── Target Player ────────────────────────────────────────────────────────────
 const PLAYER = "xLucrissx";
 
-// ─── Buff/Debuff Command Pools ───────────────────────────────────────────────
-// แต่ละ tier มีหลาย effect ให้ random 1 อันต่อโดเนท
-const COMMAND_POOLS = {
+// ─── Helper: สุ่ม N อย่างไม่ซ้ำจาก array ─────────────────────────────────────
+function pickRandom(arr, count = 1) {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+// ─── Tier Pools ───────────────────────────────────────────────────────────────
+const TIERS = {
+
+  // ── TIER 1: MINI (สุ่ม 1 อย่าง, 30 วินาที) ──────────────────────────────
   8: {
     label: "Mini Buff (30 วินาที)",
-    commands: [
-      `effect give ${PLAYER} minecraft:regeneration 30 0`,
+    pick: 1,
+    effects: [
       `effect give ${PLAYER} minecraft:speed 30 0`,
-      `effect give ${PLAYER} minecraft:night_vision 30 0`,
+      `effect give ${PLAYER} minecraft:regeneration 30 0`,
       `effect give ${PLAYER} minecraft:jump_boost 30 0`,
+      `effect give ${PLAYER} minecraft:night_vision 30 0`,
       `effect give ${PLAYER} minecraft:saturation 1 10`,
+      `effect give ${PLAYER} minecraft:dolphins_grace 30 0`,
     ],
   },
+
   9: {
-    label: "Light Debuff (30 วินาที)",
-    commands: [
+    label: "Mini Debuff (30 วินาที)",
+    pick: 1,
+    effects: [
       `effect give ${PLAYER} minecraft:slowness 30 0`,
-      `effect give ${PLAYER} minecraft:darkness 30 0`,
       `effect give ${PLAYER} minecraft:blindness 30 0`,
+      `effect give ${PLAYER} minecraft:darkness 30 0`,
       `effect give ${PLAYER} minecraft:glowing 30 0`,
-      `effect give ${PLAYER} minecraft:hunger 30 0`,
+      `effect give ${PLAYER} minecraft:mining_fatigue 30 0`,
+      `effect give ${PLAYER} minecraft:nausea 30 0`,
     ],
   },
+
+  // ── TIER 2: STANDARD (สุ่ม 2 อย่าง, 2 นาที) ─────────────────────────────
   14: {
     label: "Standard Buff (2 นาที)",
-    commands: [
+    pick: 2,
+    effects: [
       `effect give ${PLAYER} minecraft:strength 120 0`,
       `effect give ${PLAYER} minecraft:resistance 120 0`,
       `effect give ${PLAYER} minecraft:fire_resistance 120 0`,
       `effect give ${PLAYER} minecraft:water_breathing 120 0`,
       `effect give ${PLAYER} minecraft:health_boost 120 1`,
+      `effect give ${PLAYER} minecraft:haste 120 0`,
+      `effect give ${PLAYER} minecraft:absorption 120 1`,
+      `effect give ${PLAYER} minecraft:slow_falling 120 0`,
+      `effect give ${PLAYER} minecraft:invisibility 120 0`,
+      `effect give ${PLAYER} minecraft:luck 120 0`,
+      `effect give ${PLAYER} minecraft:conduit_power 120 0`,
     ],
   },
+
   15: {
-    label: "Major Buff (5 นาที)",
-    commands: [
-      `effect give ${PLAYER} minecraft:haste 300 0`,
-      `effect give ${PLAYER} minecraft:luck 300 0`,
-      `effect give ${PLAYER} minecraft:absorption 300 1`,
-      `effect give ${PLAYER} minecraft:slow_falling 300 0`,
-      `effect give ${PLAYER} minecraft:invisibility 300 0`,
+    label: "Standard Debuff (2 นาที)",
+    pick: 2,
+    effects: [
+      `effect give ${PLAYER} minecraft:weakness 120 0`,
+      `effect give ${PLAYER} minecraft:poison 120 0`,
+      `effect give ${PLAYER} minecraft:slowness 120 1`,
+      `effect give ${PLAYER} minecraft:mining_fatigue 120 2`,
+      `effect give ${PLAYER} minecraft:darkness 120 0`,
+      `effect give ${PLAYER} minecraft:blindness 120 0`,
+      `effect give ${PLAYER} minecraft:nausea 120 0`,
+      `effect give ${PLAYER} minecraft:unluck 120 0`,
+      `effect give ${PLAYER} minecraft:levitation 10 0`,
     ],
   },
-  16: {
-    label: "Heavy Debuff (60 วินาที)",
-    commands: [
-      `effect give ${PLAYER} minecraft:weakness 60 0`,
-      `effect give ${PLAYER} minecraft:mining_fatigue 60 0`,
-      `effect give ${PLAYER} minecraft:nausea 60 0`,
-      `effect give ${PLAYER} minecraft:poison 60 0`,
-      `effect give ${PLAYER} minecraft:unluck 60 0`,
+
+  // ── TIER 3: ULTIMATE ──────────────────────────────────────────────────────
+  19: {
+    label: "Full Blessing (90 วินาที)",
+    pick: 0, // 0 = ส่งทุก effect พร้อมกัน
+    effects: [
+      `effect give ${PLAYER} minecraft:regeneration 90 1`,
+      `effect give ${PLAYER} minecraft:resistance 90 1`,
+      `effect give ${PLAYER} minecraft:strength 90 1`,
+      `effect give ${PLAYER} minecraft:speed 90 1`,
+      `effect give ${PLAYER} minecraft:absorption 90 0`,
+      `effect give ${PLAYER} minecraft:fire_resistance 90 0`,
     ],
   },
+
   20: {
     label: "Death Countdown Event",
-    // Death event ใช้หลาย commands ตามลำดับ (ไม่ random)
-    commands: null,
+    pick: -1, // special handler
+    effects: [],
   },
 };
 
-// ─── Random Helper ───────────────────────────────────────────────────────────
-function pickRandom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-// ─── RCON Executor ───────────────────────────────────────────────────────────
+// ─── RCON Executor ────────────────────────────────────────────────────────────
 async function sendRcon(commands) {
   const rcon = new Rcon({
     host: RCON_HOST,
@@ -88,7 +115,6 @@ async function sendRcon(commands) {
   try {
     await rcon.connect();
     console.log("[RCON] Connected");
-
     for (const cmd of commands) {
       const response = await rcon.send(cmd);
       console.log(`[RCON] >> ${cmd}`);
@@ -112,7 +138,8 @@ async function runDeathCountdown() {
     await rcon.connect();
     console.log("[RCON] Death Countdown started");
 
-    // แสดง Title แจ้งเตือน
+    // เสียง Warden คำราม พร้อมกับขึ้น Title แจ้งเตือน
+    await rcon.send(`playsound minecraft:entity.warden.roar master ${PLAYER}`);
     await rcon.send(
       `title ${PLAYER} title {"text":"☠ DEATH INCOMING ☠","color":"red","bold":true}`
     );
@@ -120,7 +147,7 @@ async function runDeathCountdown() {
       `title ${PLAYER} subtitle {"text":"คุณจะตายใน 10 วินาที!","color":"yellow"}`
     );
 
-    // นับถอยหลัง 10 → 1 วินาที (ส่ง actionbar ทุกวินาที)
+    // นับถอยหลัง 10 → 1
     for (let i = 10; i >= 1; i--) {
       await rcon.send(
         `title ${PLAYER} actionbar {"text":"💀 ${i}...","color":"${i <= 3 ? "red" : "gold"}","bold":true}`
@@ -130,23 +157,19 @@ async function runDeathCountdown() {
 
     // ฆ่าผู้เล่น
     await rcon.send(`kill ${PLAYER}`);
-    console.log("[RCON] Death Countdown: kill executed");
+    console.log("[RCON] kill executed");
+
   } finally {
     await rcon.end();
     console.log("[RCON] Disconnected after death event");
   }
 }
 
-// ─── Webhook Endpoint ────────────────────────────────────────────────────────
-// URL: https://easydonate-webhook-production.up.railway.app/webhook/easydonate
+// ─── Webhook Endpoint ─────────────────────────────────────────────────────────
 app.post("/webhook/easydonate", async (req, res) => {
   console.log("[Webhook] Received:", JSON.stringify(req.body, null, 2));
 
-  // EasyDonate ส่ง payload มาเป็น JSON
-  // field ที่ใช้: payment.amount (หรือ amount) — ปรับตาม payload จริงของ EasyDonate
   const body = req.body;
-
-  // รองรับหลาย format ที่ EasyDonate อาจส่งมา
   const amount =
     parseInt(body?.payment?.amount) ||
     parseInt(body?.amount) ||
@@ -161,20 +184,18 @@ app.post("/webhook/easydonate", async (req, res) => {
 
   console.log(`[Webhook] Amount: ${amount} บาท`);
 
-  const tier = COMMAND_POOLS[amount];
+  const tier = TIERS[amount];
 
   if (!tier) {
     console.warn(`[Webhook] ไม่มี tier สำหรับ ${amount} บาท`);
-    return res
-      .status(200)
-      .json({ message: `No tier configured for amount: ${amount}` });
+    return res.status(200).json({ message: `No tier configured for amount: ${amount}` });
   }
 
   console.log(`[Webhook] Tier: ${tier.label}`);
 
   try {
+    // ── Death Event ──────────────────────────────────────────────────────────
     if (amount === 20) {
-      // Death Event — รัน countdown sequence แบบ async
       runDeathCountdown().catch((err) =>
         console.error("[RCON] Death countdown error:", err.message)
       );
@@ -186,28 +207,40 @@ app.post("/webhook/easydonate", async (req, res) => {
       });
     }
 
-    // Buff/Debuff — random 1 command จาก pool
-    const chosenCommand = pickRandom(tier.commands);
-    await sendRcon([chosenCommand]);
+    // ── Full Blessing (ส่งทุก effect พร้อมกัน) ───────────────────────────────
+    if (tier.pick === 0) {
+      await sendRcon(tier.effects);
+      return res.status(200).json({
+        success: true,
+        tier: tier.label,
+        player: PLAYER,
+        commands: tier.effects,
+      });
+    }
+
+    // ── Buff/Debuff ปกติ (สุ่ม N อย่าง) ─────────────────────────────────────
+    const chosen = pickRandom(tier.effects, tier.pick);
+    await sendRcon(chosen);
 
     return res.status(200).json({
       success: true,
       tier: tier.label,
       player: PLAYER,
-      command: chosenCommand,
+      commands: chosen,
     });
+
   } catch (err) {
     console.error("[RCON] Error:", err.message);
     return res.status(500).json({ error: "RCON connection failed", detail: err.message });
   }
 });
 
-// ─── Health Check ────────────────────────────────────────────────────────────
+// ─── Health Check ─────────────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   res.json({
     status: "NightfallCraft Webhook Server is running",
     endpoint: "POST /webhook/easydonate",
-    tiers: Object.entries(COMMAND_POOLS).map(([price, tier]) => ({
+    tiers: Object.entries(TIERS).map(([price, tier]) => ({
       price: `${price} บาท`,
       label: tier.label,
     })),
