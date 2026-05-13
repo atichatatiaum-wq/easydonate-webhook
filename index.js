@@ -132,7 +132,6 @@ async function runDeathCountdown() {
     host: RCON_HOST,
     port: RCON_PORT,
     password: RCON_PASSWORD,
-    timeout: 30000,
   });
 
   try {
