@@ -302,8 +302,17 @@ app.post("/webhook/easydonate", async (req, res) => {
   }
 
   console.log(`[Webhook] Tier: ${tier.label}`);
+  // ดึงชื่อและข้อความโดเนท
+   const donatorName = body?.donatorName || "Someone";
+   const donateMessage = body?.donateMessage || "";
 
   try {
+    // แสดงชื่อคนโดเนทใน title
+await sendRcon([
+  `title ${PLAYER} title {"text":"${donatorName}","color":"gold","bold":true}`,
+  `title ${PLAYER} subtitle {"text":"${tier.label}","color":"yellow"}`,
+  `tellraw ${PLAYER} {"text":"[Donate] ${donatorName}: ${donateMessage}","color":"aqua"}`,
+]);
     if (amount === 20) {
       runDeathCountdown().catch((err) =>
         console.error("[RCON] Death countdown error:", err.message)
